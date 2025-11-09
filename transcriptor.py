@@ -175,6 +175,8 @@ class Transcriptor:
         if whisper_config.get("previous_text_prefix"):
             prefix_text = last_sentence
 
+        interruption_duration = whisper_config.get("interruption_duration")
+
         segments, info = self.asr_model.transcribe(
             audio_buffer,
             beam_size = whisper_config.get("beam_size"),
@@ -197,6 +199,9 @@ class Transcriptor:
         transcript = ""
         new_buffer = audio_buffer
 
+        # 计算音频时长
+        audio_duration = len(audio_buffer) / 16000
+
         # 获取转录结果
         generated_segments = []
         for segment in segments:
@@ -213,7 +218,17 @@ class Transcriptor:
                 transcript = generated_segments[0].text
             else:
                 transcript = ""
-            final = False
+
+            # 如果音频时长超过最大中断时长，则认为中断结束
+            if audio_duration > interruption_duration:
+                print(f"Warning: audio buffer over {interruption_duration} seconds, interrupt")
+                sentence = transcript
+                transcript = ""
+                new_buffer = np.array([],dtype=np.float32)
+                final = True
+            else:
+                final = False
+
             self.dump(final, audio_buffer)
         elif num_segments >= 2:
             # 如果有多段，则截取最后一段
@@ -225,10 +240,11 @@ class Transcriptor:
                 transcript = generated_segments[num_segments - 1].text
             else:
                 transcript = ""
-            final = True
             cut_point = int(generated_segments[num_segments - 2].end * 16000)
-            self.dump(final, audio_buffer[:cut_point])
             new_buffer = audio_buffer[cut_point:]
+
+            final = True
+            self.dump(final, audio_buffer[:cut_point])
 
         if whisper_config.get("tradition_to_simple"):
             # 繁体到简体

@@ -34,6 +34,10 @@ class WebServer:
     def encode_opus(self, audio_data):
         opus_list = []
 
+        # 检查音频数据长度，如果小于一帧或为空，直接返回空字节串
+        if len(audio_data) < AUDIO_FRAME_SIZE:
+            return b""
+
         for i in range(len(audio_data) // AUDIO_FRAME_SIZE):
             chunk = audio_data[i*AUDIO_FRAME_SIZE:(i+1)*AUDIO_FRAME_SIZE]
 

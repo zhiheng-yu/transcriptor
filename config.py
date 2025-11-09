@@ -21,7 +21,7 @@ class Config:
     preheat_audio = "./preheat_audio.wav"
 
     dump = {
-        "audio_save": "final",       # all: 保存所有音频，final: 只保存最终音频, none: 不保存
+        "audio_save": "final",  # all: 保存所有音频，final: 只保存最终音频, none: 不保存
         "audio_dir": "./cache"
     }
 
@@ -52,6 +52,7 @@ class Config:
 
     whisper_config = {
         "tradition_to_simple" : False,
+        "interruption_duration": 10,    # 最大中断时长，单位：秒
         "beam_size" : 8,  # 1、beam_size调整为8 best_of调整为4 提高模型效果
         "best_of" : 4,    # 2、beam_size调整为4 best_of调整为1 速度更快
         "patience" : 1.0,
