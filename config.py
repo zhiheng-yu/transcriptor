@@ -37,11 +37,11 @@ class Config:
 
     filter_match = {
         "skip" : False,
-        "find_match" : ["谢谢大家", "简体中文", "优独播剧场", "这是一段会议录音。"],
+        "find_match" : ["谢谢大家", "简体中文", "优独播剧场", "大家好，这是一段会议录音。"],
         "cos_match" : [
             "请不吝点赞 订阅 转发 打赏支持明镜与点栏目",
             "志愿者 李宗盛",
-            "这是一段会议录音。",
+            "大家好，这是一段会议录音。",
             "字幕志愿者 杨栋梁",
             "明镜需要您的支持 欢迎订阅明镜",
             "优优独播剧场——YoYo Television Series Exclusive",
@@ -64,7 +64,7 @@ class Config:
         "previous_text_prompt" : False,
         "previous_text_hotwords" : True, # 把上段语句做为提示 断句相对更保守 以提升效果
         "previous_text_prefix" : False,
-        "initial_prompt" : "这是一段会议录音。",
+        "initial_prompt" : "大家好，这是一段会议录音。",
         "hotwords_text" : "",
         "temperature" : [0.0, 0.2, 0.6, 1.0],
         "avg_logprob_score" : -1.0  # 设置过滤阈值 低于阈值则不输出
