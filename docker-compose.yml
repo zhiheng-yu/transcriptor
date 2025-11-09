@@ -1,0 +1,16 @@
+services:
+  api:
+    image: transcriptor:latest
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']  # 指定 GPU 设备号
+              capabilities: [gpu]
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "6002:6002"
+    restart: unless-stopped
