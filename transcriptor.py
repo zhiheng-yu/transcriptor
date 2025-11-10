@@ -309,6 +309,7 @@ if __name__ == "__main__":
     samples = np.array(audio.get_array_of_samples())
     # print(samples.shape)
 
+    last_speaker = "guest"
     last_sentence = ""
     last_transcript = ""
     last_buffer = np.array([],dtype=np.float32)
@@ -319,11 +320,11 @@ if __name__ == "__main__":
         audio_data = samples[i:i + audio_size]
 
         audio_f32 = audio_data.astype(np.float32) / 32768.0
-        final, sentence, transcript, new_buffer = transcriptor.inference(
-            audio_f32, last_sentence, last_transcript, last_buffer)
+        final, speaker, sentence, transcript, new_buffer = transcriptor.inference(
+            audio_f32, last_speaker, last_sentence, last_transcript, last_buffer)
         if final:
             print("\r\033[K", end="", flush=True)
-            print(sentence)
+            print(f"{speaker}: {sentence}")
             print(transcript, end="", flush=True)
         else:
             print("\r\033[K", end="", flush=True)

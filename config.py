@@ -12,9 +12,13 @@ class Config:
         },
         "vad" : {
             "name" : "silero",
-            "path" : os.path.join(model_path,"silero-vad"),
+            "path" : os.path.join(model_path, "silero-vad"),
             "compute_type" : "float16",
             "device" : "cuda"
+        },
+        "speaker_verifier" : {
+            "name" : "ERes2NetV2",
+            "path" : os.path.join(model_path, "ERes2NetV2_w24s4ep4")
         }
     }
 
@@ -52,9 +56,9 @@ class Config:
 
     whisper_config = {
         "tradition_to_simple" : False,
-        "interruption_duration": 10,    # 最大中断时长，单位：秒
-        "beam_size" : 8,  # 1、beam_size调整为8 best_of调整为4 提高模型效果
-        "best_of" : 4,    # 2、beam_size调整为4 best_of调整为1 速度更快
+        "interruption_duration": 20,    # 最大中断时长，单位：秒
+        "beam_size" : 2,  # 1、beam_size调整为8 best_of调整为4 提高模型效果
+        "best_of" : 1,    # 2、beam_size调整为4 best_of调整为1 速度更快
         "patience" : 1.0,
         "suppress_blank" : True,     # 幻觉抑制
         "repetition_penalty" : 1.2,  # 重复惩罚 但降低效果
