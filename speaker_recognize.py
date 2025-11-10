@@ -9,6 +9,8 @@ class SpeakerVerifier:
         self.sv_pipeline = pipeline(task='speaker-verification', model=sv_config['path'])
 
         self.registered_speaker = {}
+        for speaker in sv_config['speakers']:
+            self.register_speaker(speaker['id'], speaker['path'])
 
     def compare(self, audio1, audio2, thr=0.5):
         return self.sv_pipeline([audio1, audio2], thr=thr)

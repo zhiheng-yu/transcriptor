@@ -16,7 +16,11 @@ RUN python3 -c "import ctypes.util; print(ctypes.util.find_library('opus'))"
 COPY requirements-server.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY config.py .
+COPY preheat_audio.wav .
+COPY speaker_recognize.py .
+COPY transcriptor.py .
+COPY web_server.py .
 
 EXPOSE 6002
 

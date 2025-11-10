@@ -1,6 +1,6 @@
 import websocket_server
 import base64
-import opuslib
+import opuslib_next
 import json
 import numpy as np
 
@@ -14,8 +14,8 @@ AUDIO_FRAME_SIZE = 320
 class WebServer:
     def __init__(self):
         self.transcriptor = Transcriptor()
-        self.opus_decoder = opuslib.Decoder(SAMPLING_RATE, AUDIO_CHANNELS)
-        self.opus_encoder = opuslib.Encoder(SAMPLING_RATE, AUDIO_CHANNELS, opuslib.APPLICATION_VOIP)
+        self.opus_decoder = opuslib_next.Decoder(SAMPLING_RATE, AUDIO_CHANNELS)
+        self.opus_encoder = opuslib_next.Encoder(SAMPLING_RATE, AUDIO_CHANNELS, opuslib_next.APPLICATION_VOIP)
 
         # 创建 WebSocket 服务器
         self.ws = websocket_server.WebsocketServer(host='0.0.0.0', port=6002)
