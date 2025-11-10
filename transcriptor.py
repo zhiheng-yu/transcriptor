@@ -17,14 +17,6 @@ class Transcriptor:
     def __init__(self):
         self.load_models(Config.models)
         self.preheat(Config.preheat_audio)
-        self.speaker_verifier = SpeakerVerifier()
-        self.vectorizer = TfidfVectorizer()
-
-        whisper_config = Config.whisper_config
-        if whisper_config.get("tradition_to_simple"):
-            import opencc
-            self.cc = opencc.OpenCC('t2s.json')
-
         self.epoch = 0
 
     def load_models(self, models):
@@ -44,6 +36,14 @@ class Transcriptor:
             trust_repo = None,
             source = 'local',
         )
+
+        self.speaker_verifier = SpeakerVerifier()
+        self.vectorizer = TfidfVectorizer()
+
+        whisper_config = Config.whisper_config
+        if whisper_config.get("tradition_to_simple"):
+            import opencc
+            self.cc_model = opencc.OpenCC('t2s.json')
 
     def preheat(self, preheat_audio):
         whisper_config = Config.whisper_config
@@ -255,7 +255,7 @@ class Transcriptor:
 
         if whisper_config.get("tradition_to_simple"):
             # 繁体到简体
-            transcript = self.cc.convert(transcript)
+            transcript = self.cc_model.convert(transcript)
 
         return final, speaker, sentence, transcript, new_buffer
 
