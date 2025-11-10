@@ -25,7 +25,7 @@ class Config:
     preheat_audio = "./preheat_audio.wav"
 
     dump = {
-        "audio_save": "final",  # all: 保存所有音频，final: 只保存最终音频, none: 不保存
+        "audio_save": "none",  # all: 保存所有音频，final: 只保存最终音频, none: 不保存
         "audio_dir": "./cache"
     }
 
