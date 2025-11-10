@@ -11,6 +11,8 @@ services:
               capabilities: [gpu]
     environment:
       - PYTHONUNBUFFERED=1
+    volumes:
+      - ./config.py:/app/config.py
     ports:
       - "6002:6002"
     restart: unless-stopped
