@@ -68,18 +68,14 @@ pip install -r requirements.txt
 
 ## 模型准备
 
-1. 从 modelscope 下载 `faster-whisper` 和 `ERes2NetV2` 模型到 `models/` 目录
+下载 `faster-whisper` 、 `ERes2NetV2` 和 `silero-vad` 模型到 `models/` 目录
 
 ```bash
 cd models
+
 modelscope download --model mobiuslabsgmbh/faster-whisper-large-v3-turbo --local_dir ./faster-whisper-large-v3-turbo
 modelscope download --model iic/speech_eres2netv2w24s4ep4_sv_zh-cn_16k-common --local_dir ./ERes2NetV2_w24s4ep4
-```
 
-2. 从 github 克隆 snakers4/silero-vad 到 `models/` 目录
-
-```bash
-cd models
 git clone https://github.com/snakers4/silero-vad.git
 ```
 
