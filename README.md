@@ -8,8 +8,10 @@
 - `config.py`: 配置文件，包含模型路径、VAD参数、过滤规则等
 - `web_server.py`: WebSocket 服务端，处理客户端连接和转录请求
 - `web_client.py`: WebSocket 客户端，采集麦克风音频并发送到服务器
-- `models/`: 模型存储目录
 - `cache/`: 转录音频缓存目录
+- `models/`: 模型存储目录
+- `examples/`: 示例音频文件目录，用于测试和演示系统功能
+- `register_db/`: 发言人注册音频库，用于存放注册用户的说话人样本
 - `preheat_audio.wav`: 模型预热音频文件
 
 ## 核心功能
@@ -33,23 +35,30 @@
 - **多温度采样**: 支持 `[0.0, 0.2, 0.6, 1.0]` 温度序列，平衡生成质量和多样性
 - **繁体转简体**: 可选开启繁体中文到简体中文的转换
 
-### 3. 文本过滤
+### 3. 发言人识别
 
-集成基于 TF-IDF 和余弦相似度的文本过滤机制，自动过滤预设的干扰文本。
+基于 ModelScope 的 ERes2NetV2 模型实现发言人验证，支持多发言人场景的自动识别。
 
-**过滤规则**:
-- **精确匹配**: 过滤包含特定关键词的文本（如 "谢谢大家"、"这是一段会议录音。"）
-- **语义相似度**: 使用余弦相似度过滤与预设文本相似度超过阈值（默认 0.02）的文本
+**工作原理**:
+- 预先注册发言人音频样本
+- 当检测到完整句子时，自动匹配最相似的发言人
+- 通过余弦相似度计算匹配度，低于阈值则标记为 `guest`
 
-## 配置说明
+**配置参数** (`config.py`):
+- `models.speaker_verifier.path`: ERes2NetV2 模型路径
+- `models.speaker_verifier.speakers`: 注册发言人列表，包含 `id` 和 `path` 字段
+- 相似度阈值默认为 0.3
 
-详细配置项请参考 `config.py` 文件，主要配置包括：
+**注册发言人示例**:
 
-- **模型路径**: `models.asr.path` 和 `models.vad.path`
-- **设备设置**: 支持 CUDA 加速 (`device: "cuda"`)
-- **计算类型**: `compute_type: "float16"` 以提升性能
-- **预热音频**: `preheat_audio` 用于模型预热，减少首次推理延迟
-- **音频保存**: `dump.audio_save` 可设置为 `all`、`final` 或 `none`
+```python
+"speakers": [
+    { "id": "speaker1", "path": "./register_db/speaker1_sample.wav" },
+    { "id": "speaker2", "path": "./register_db/speaker2_sample.wav" },
+]
+```
+
+> **注意**: 音频样本建议使用 16kHz 采样率的单声道 WAV 格式，时长建议 5~10 秒。
 
 ## 依赖安装
 
@@ -59,12 +68,24 @@ pip install -r requirements.txt
 
 ## 模型准备
 
-1. 从 huggingface 下载 `faster-whisper-large-v3-turbo` 模型到 `models/faster-whisper-large-v3-turbo` 目录
-2. 从 github 克隆 snakers4/silero-vad 到 `models/silero-vad` 目录
+1. 从 modelscope 下载 `faster-whisper` 和 `ERes2NetV2` 模型到 `models/` 目录
+
+```bash
+cd models
+modelscope download --model mobiuslabsgmbh/faster-whisper-large-v3-turbo --local_dir ./faster-whisper-large-v3-turbo
+modelscope download --model iic/speech_eres2netv2w24s4ep4_sv_zh-cn_16k-common --local_dir ./ERes2NetV2_w24s4ep4
+```
+
+2. 从 github 克隆 snakers4/silero-vad 到 `models/` 目录
+
+```bash
+cd models
+git clone https://github.com/snakers4/silero-vad.git
+```
 
 ## 运行方式
 
-### 1. 服务端启动
+### 1. 服务端启动（python）
 
 ```bash
 python web_server.py
@@ -82,7 +103,17 @@ python web_server.py
 - `transcript`: 字符串，当前句子的实时转录结果
 - `buffer_base64`: Base64 编码的字符串，为当前句子的音频缓存（Opus 编码），需要在下次推理时传入以保持上下文连续性
 
-### 2. 客户端（Demo）启动
+### 2. 服务端启动（docker）
+
+```bash
+# 1. 构建 Docker 镜像
+docker build -t transcriptor:latest .
+
+# 2. 运行容器
+docker compose up -d
+```
+
+### 3. 客户端（Demo）启动
 
 ```bash
 python web_client.py
