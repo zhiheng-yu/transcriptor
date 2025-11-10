@@ -10,6 +10,7 @@ SAMPLING_RATE = 16000
 AUDIO_CHANNELS = 1
 AUDIO_FRAME_SIZE = 320  # 每 320 采样点为 1 帧
 AUDIO_DATA_SIZE = 50    # 每 50 帧为 1 秒，每秒 16000 采样点
+RECV_TIMEOUT = 3        # 接收结果超时时间，单位：秒
 
 
 class WebClient():
@@ -45,6 +46,7 @@ class WebClient():
 
         request = {
             "audio_base64": "",
+            "last_speaker": "guest",
             "last_sentence": "",
             "last_transcript": "",
             "last_buffer_base64": ""
@@ -60,12 +62,13 @@ class WebClient():
 
             # 获取结果，并更新 request
             try:
-                result_dict = self.recv_fifo.get(timeout=2)  # 设置超时时间为2秒
+                result_dict = self.recv_fifo.get(timeout=RECV_TIMEOUT)  # 设置超时时间为2秒
+                request["last_speaker"] = result_dict.get("speaker")
                 request["last_sentence"] = result_dict.get("sentence")
                 request["last_transcript"] = result_dict.get("transcript")
                 request["last_buffer_base64"] = result_dict.get("buffer_base64")
             except queue.Empty:
-                print("Receive result timeout, no data received within 2 seconds.")
+                print(f"Receive result timeout, no data received within {RECV_TIMEOUT} seconds.")
                 continue
 
     def on_message(self, ws, message):
@@ -74,7 +77,7 @@ class WebClient():
         try:
             if result_dict.get("final"):
                 print("\r\033[K", end="", flush=True)
-                print(result_dict.get("sentence"))
+                print(f"{result_dict.get('speaker')}: {result_dict.get('sentence')}")
                 print(result_dict.get("transcript"), end="", flush=True)
             else:
                 print("\r\033[K", end="", flush=True)

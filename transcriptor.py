@@ -10,13 +10,14 @@ from sklearn.metrics.pairwise import cosine_similarity
 from faster_whisper import WhisperModel
 
 from config import Config
+from speaker_recognize import SpeakerVerifier
 
 
 class Transcriptor:
     def __init__(self):
         self.load_models(Config.models)
         self.preheat(Config.preheat_audio)
-
+        self.speaker_verifier = SpeakerVerifier()
         self.vectorizer = TfidfVectorizer()
 
         whisper_config = Config.whisper_config
@@ -160,7 +161,7 @@ class Transcriptor:
 
         return text
 
-    def transcript(self, audio_buffer, last_sentence):
+    def transcript(self, audio_buffer, last_speaker, last_sentence):
         whisper_config = Config.whisper_config
 
         initial_prompt = whisper_config.get("initial_prompt")
@@ -174,6 +175,8 @@ class Transcriptor:
         prefix_text = None
         if whisper_config.get("previous_text_prefix"):
             prefix_text = last_sentence
+
+        interruption_duration = whisper_config.get("interruption_duration")
 
         segments, info = self.asr_model.transcribe(
             audio_buffer,
@@ -193,9 +196,13 @@ class Transcriptor:
         # print("transcript info: ", info)
 
         final = False
+        speaker = last_speaker
         sentence = last_sentence
         transcript = ""
         new_buffer = audio_buffer
+
+        # 计算音频时长
+        audio_duration = len(audio_buffer) / 16000
 
         # 获取转录结果
         generated_segments = []
@@ -205,7 +212,7 @@ class Transcriptor:
 
         if num_segments == 0:
             # 如果转录结果为空，则直接返回
-            return False, sentence, transcript, new_buffer
+            return False, speaker, sentence, transcript, new_buffer
         elif num_segments == 1:
             # 如果只有一段，则记录转录信息
             # print("log: ", generated_segments[0].avg_logprob)
@@ -213,7 +220,18 @@ class Transcriptor:
                 transcript = generated_segments[0].text
             else:
                 transcript = ""
-            final = False
+
+            # 如果音频时长超过最大中断时长，则认为中断结束
+            if audio_duration > interruption_duration:
+                print(f"Warning: audio buffer over {interruption_duration} seconds, interrupt")
+                speaker = self.speaker_verifier.match_speaker(audio_buffer)
+                sentence = transcript
+                transcript = ""
+                new_buffer = np.array([],dtype=np.float32)
+                final = True
+            else:
+                final = False
+
             self.dump(final, audio_buffer)
         elif num_segments >= 2:
             # 如果有多段，则截取最后一段
@@ -225,18 +243,23 @@ class Transcriptor:
                 transcript = generated_segments[num_segments - 1].text
             else:
                 transcript = ""
-            final = True
+
+            # 截取最后一段音频作为新的音频缓冲区
             cut_point = int(generated_segments[num_segments - 2].end * 16000)
-            self.dump(final, audio_buffer[:cut_point])
+            last_buffer = audio_buffer[:cut_point]
+            speaker = self.speaker_verifier.match_speaker(last_buffer)
             new_buffer = audio_buffer[cut_point:]
+
+            final = True
+            self.dump(final, last_buffer)
 
         if whisper_config.get("tradition_to_simple"):
             # 繁体到简体
             transcript = self.cc.convert(transcript)
 
-        return final, sentence, transcript, new_buffer
+        return final, speaker, sentence, transcript, new_buffer
 
-    def inference(self, audio_data, last_sentence, last_transcript, last_buffer):
+    def inference(self, audio_data, last_speaker, last_sentence, last_transcript, last_buffer):
         # vad 过滤静音
         audio_data = self.vad_rm_silence(audio_data)
 
@@ -245,29 +268,31 @@ class Transcriptor:
             if len(last_buffer) > 0 and len(last_transcript) > 0:
                 # 如果 last_buffer 不为空，则视为结束，完整句子为 last_transcript ，新的转录结果为空，新的音频缓冲区为空
                 self.dump(True, last_buffer)
+                speaker = self.speaker_verifier.match_speaker(last_buffer)
                 new_buffer = np.array([],dtype=np.float32)
-                return True, last_transcript, "", new_buffer
+                return True, speaker, last_transcript, "", new_buffer
             else:
                 # 如果 last_buffer 为空，则视为未结束
-                return False, last_sentence, last_transcript, last_buffer
+                return False, last_speaker, last_sentence, last_transcript, last_buffer
 
         # 合并 last_buffer 和 chunk_audio
         audio_buffer = np.concatenate([last_buffer, audio_data])
 
         # 转录，last_sentence 为上一段转录的完整句子，可作为 prompt 或 hotwords
-        final, sentence, transcript, new_buffer = self.transcript(audio_buffer, last_sentence)
+        final, speaker, sentence, transcript, new_buffer = self.transcript(audio_buffer, last_speaker, last_sentence)
 
         # 过滤幻觉词
+        sentence = self.filter(sentence)
         transcript = self.filter(transcript)
 
-        return final, sentence, transcript, new_buffer
+        return final, speaker, sentence, transcript, new_buffer
 
 
 if __name__ == "__main__":
     transcriptor = Transcriptor()
 
     # 读取音频文件
-    audio = AudioSegment.from_file("./asr_example.wav")
+    audio = AudioSegment.from_file("./examples/asr_example.wav")
     audio = audio.set_frame_rate(16000)
 
     # 设置音频数据为 int16 格式
@@ -284,6 +309,7 @@ if __name__ == "__main__":
     samples = np.array(audio.get_array_of_samples())
     # print(samples.shape)
 
+    last_speaker = "guest"
     last_sentence = ""
     last_transcript = ""
     last_buffer = np.array([],dtype=np.float32)
@@ -294,11 +320,11 @@ if __name__ == "__main__":
         audio_data = samples[i:i + audio_size]
 
         audio_f32 = audio_data.astype(np.float32) / 32768.0
-        final, sentence, transcript, new_buffer = transcriptor.inference(
-            audio_f32, last_sentence, last_transcript, last_buffer)
+        final, speaker, sentence, transcript, new_buffer = transcriptor.inference(
+            audio_f32, last_speaker, last_sentence, last_transcript, last_buffer)
         if final:
             print("\r\033[K", end="", flush=True)
-            print(sentence)
+            print(f"{speaker}: {sentence}")
             print(transcript, end="", flush=True)
         else:
             print("\r\033[K", end="", flush=True)

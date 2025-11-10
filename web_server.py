@@ -34,6 +34,10 @@ class WebServer:
     def encode_opus(self, audio_data):
         opus_list = []
 
+        # 检查音频数据长度，如果小于一帧或为空，直接返回空字节串
+        if len(audio_data) < AUDIO_FRAME_SIZE:
+            return b""
+
         for i in range(len(audio_data) // AUDIO_FRAME_SIZE):
             chunk = audio_data[i*AUDIO_FRAME_SIZE:(i+1)*AUDIO_FRAME_SIZE]
 
@@ -80,6 +84,7 @@ class WebServer:
             )
             audio_f32 = audio_data.astype(np.float32) / 32768.0
 
+            last_speaker = resquest["last_speaker"]
             last_sentence = resquest["last_sentence"]
             last_transcript = resquest["last_transcript"]
             last_buffer = np.frombuffer(
@@ -88,13 +93,14 @@ class WebServer:
             )
             last_buffer_f32 = last_buffer.astype(np.float32) / 32768.0
 
-            final, sentence, transcript, new_buffer_f32 = self.transcriptor.inference(
-                audio_f32, last_sentence, last_transcript, last_buffer_f32)
+            final, speaker, sentence, transcript, new_buffer_f32 = self.transcriptor.inference(
+                audio_f32, last_speaker, last_sentence, last_transcript, last_buffer_f32)
 
             new_buffer_i16 = (new_buffer_f32 * 32768.0).astype(np.int16)
 
             inference_result = {
                 "final": final,
+                "speaker": speaker,
                 "sentence": sentence,
                 "transcript": transcript,
                 "buffer_base64": base64.b64encode(self.encode_opus(new_buffer_i16)).decode("utf-8")
