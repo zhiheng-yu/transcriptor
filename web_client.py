@@ -1,6 +1,6 @@
 import queue
 import pyaudio
-import opuslib
+import opuslib_next
 import base64
 import json
 import threading
@@ -19,7 +19,7 @@ class WebClient():
         self.audio_fifo = queue.Queue()
         self.recv_fifo = queue.Queue()
 
-        self.opus_encoder = opuslib.Encoder(SAMPLING_RATE, AUDIO_CHANNELS, opuslib.APPLICATION_VOIP)
+        self.opus_encoder = opuslib_next.Encoder(SAMPLING_RATE, AUDIO_CHANNELS, opuslib_next.APPLICATION_VOIP)
         self.ws = websocket.WebSocketApp(url, on_message=self.on_message, on_open=self.on_open)
         print("Client Init")
 
