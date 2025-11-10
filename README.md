@@ -77,6 +77,7 @@ python web_server.py
 服务端通过 WebSocket 返回 JSON 格式的转录结果，包含以下字段：
 
 - `final`: 布尔值，代表是否包含完整句子
+- `speaker`: 字符串，上一个完整句子的发言人
 - `sentence`: 字符串，包含上一个完整句子（当 `final` 为 `true` 时有效）
 - `transcript`: 字符串，当前句子的实时转录结果
 - `buffer_base64`: Base64 编码的字符串，为当前句子的音频缓存（Opus 编码），需要在下次推理时传入以保持上下文连续性
