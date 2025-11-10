@@ -12,6 +12,10 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     volumes:
+      - ./cache:/app/cache
+      - ./models:/app/models
+      - ./examples:/app/examples
+      - ./register_db:/app/register_db
       - ./config.py:/app/config.py
     ports:
       - "6002:6002"
