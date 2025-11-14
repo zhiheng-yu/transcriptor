@@ -13,7 +13,7 @@ services:
       - PYTHONUNBUFFERED=1
     volumes:
       - ./cache:/app/cache
-      - ./models:/app/models
+      - ./checkpoints:/app/checkpoints
       - ./examples:/app/examples
       - ./register_db:/app/register_db
       - ./config.py:/app/config.py

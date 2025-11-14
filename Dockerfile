@@ -19,6 +19,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY config.py .
 COPY preheat_audio.wav .
 COPY speaker_recognize.py .
+COPY speech_enhance.py .
 COPY transcriptor.py .
 COPY web_server.py .
 
