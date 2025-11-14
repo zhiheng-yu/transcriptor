@@ -9,14 +9,31 @@
 - `web_server.py`: WebSocket 服务端，处理客户端连接和转录请求
 - `web_client.py`: WebSocket 客户端，采集麦克风音频并发送到服务器
 - `cache/`: 转录音频缓存目录
-- `models/`: 模型存储目录
+- `checkpoints/`: 模型存储目录
 - `examples/`: 示例音频文件目录，用于测试和演示系统功能
 - `register_db/`: 发言人注册音频库，用于存放注册用户的说话人样本
 - `preheat_audio.wav`: 模型预热音频文件
 
 ## 核心功能
 
-### 1. 语音活动检测 (VAD)
+### 1. 声音增强
+
+在转录前对音频进行预处理，提升信噪比和音质，改善转录准确性。
+
+**工作原理**:
+- 使用 ClearVoice 的 MossFormer2_SE_48K 模型进行语音增强，去除背景噪音
+- 使用 pyloudnorm 进行响度归一化，统一音频音量
+- 自动处理不同采样率（内部转换为 48kHz 处理）
+
+**配置参数** (`config.py`):
+- `speech_enhance.enable`: 是否启用声音增强 (默认 `True`)
+- `speech_enhance.model_name`: 增强模型名称 (默认 `"MossFormer2_SE_48K"`)
+- `speech_enhance.target_lufs`: 目标响度值，单位 LUFS (默认 `-16.0`)
+- `speech_enhance.true_peak_limit`: 真峰值限制，单位 dBTP (默认 `-1.0`)
+
+> **注意**: 音频长度小于 0.4 秒时，将仅进行简单的峰值归一化以保证处理稳定性。
+
+### 2. 语音活动检测 (VAD)
 
 使用 Silero VAD 模型检测语音活动，有效过滤静音段，提升转录效率和准确性。
 
@@ -26,7 +43,7 @@
 - `min_voice_duration`: 最小语音时长 (默认 8 帧 ≈ 250ms)
 - `silence_reserve`: 语音段前后保留的静音采样点 (默认 6 帧 ≈ 187.5ms)
 
-### 2. 实时转录
+### 3. 实时转录
 
 基于 faster-whisper 模型实现流式转录，支持以下特性：
 
@@ -35,7 +52,7 @@
 - **多温度采样**: 支持 `[0.0, 0.2, 0.6, 1.0]` 温度序列，平衡生成质量和多样性
 - **繁体转简体**: 可选开启繁体中文到简体中文的转换
 
-### 3. 发言人识别
+### 4. 发言人识别
 
 基于 ModelScope 的 ERes2NetV2 模型实现发言人验证，支持多发言人场景的自动识别。
 
@@ -68,12 +85,14 @@ pip install -r requirements.txt
 
 ## 模型准备
 
-下载 `faster-whisper` 、 `ERes2NetV2` 和 `silero-vad` 模型到 `models/` 目录
+下载 `faster-whisper` 、 `ERes2NetV2` 、 `MossFormer2_SE_48K` 和 `silero-vad` 模型到 `checkpoints/` 目录
 
 ```bash
-cd models
+cd checkpoints
 
 modelscope download --model mobiuslabsgmbh/faster-whisper-large-v3-turbo --local_dir ./faster-whisper-large-v3-turbo
+modelscope download --model iic/ClearerVoice-Studio MossFormer2_SE_48K/last_best_checkpoint --local_dir .
+modelscope download --model iic/ClearerVoice-Studio MossFormer2_SE_48K/last_best_checkpoint.pt --local_dir .
 modelscope download --model iic/speech_eres2netv2w24s4ep4_sv_zh-cn_16k-common --local_dir ./ERes2NetV2_w24s4ep4
 
 git clone https://github.com/snakers4/silero-vad.git

@@ -11,13 +11,15 @@ from faster_whisper import WhisperModel
 
 from config import Config
 from speaker_recognize import SpeakerVerifier
+from speech_enhance import SpeechEnhance
 
 
 class Transcriptor:
     def __init__(self):
+        self.samplerate = 16000
+        self.epoch = 0
         self.load_models(Config.models)
         self.preheat(Config.preheat_audio)
-        self.epoch = 0
 
     def load_models(self, models):
         asr_config = models.get("asr")
@@ -30,39 +32,56 @@ class Transcriptor:
             compute_type = asr_config["compute_type"]
         )
 
-        self.vad_model, _ = torch.hub.load(
-            repo_or_dir = vad_config["path"],
-            model = 'silero_vad',
-            trust_repo = None,
-            source = 'local',
-        )
-
         self.speaker_verifier = SpeakerVerifier()
-        self.vectorizer = TfidfVectorizer()
 
-        whisper_config = Config.whisper_config
-        if whisper_config.get("tradition_to_simple"):
+        if Config.vad.get("enable"):
+            self.vad_model, _ = torch.hub.load(
+                repo_or_dir = vad_config["path"],
+                model = 'silero_vad',
+                trust_repo = None,
+                source = 'local',
+            )
+        else:
+            self.vad_model = None
+
+        se_config = Config.speech_enhance
+        if se_config.get("enable"):
+            self.speech_enhance = SpeechEnhance(
+                model_name=se_config.get("model_name"),
+                target_lufs=se_config.get("target_lufs"),
+                true_peak_limit=se_config.get("true_peak_limit")
+            )
+        else:
+            self.speech_enhance = None
+
+        if Config.filter_match.get("enable"):
+            self.vectorizer = TfidfVectorizer()
+        else:
+            self.vectorizer = None
+
+        self.whisper_config = Config.whisper_config
+        if self.whisper_config.get("tradition_to_simple"):
             import opencc
             self.cc_model = opencc.OpenCC('t2s.json')
+        else:
+            self.cc_model = None
 
     def preheat(self, preheat_audio):
-        whisper_config = Config.whisper_config
-
-        preheat_audio_, _ = librosa.load(preheat_audio, sr=16000, dtype=np.float32)
+        preheat_audio_, _ = librosa.load(preheat_audio, sr=self.samplerate, dtype=np.float32)
         self.asr_model.transcribe(
             preheat_audio_,
-            beam_size = whisper_config.get("beam_size"),
-            best_of = whisper_config.get("best_of"),
-            patience = whisper_config.get("patience"),
-            suppress_blank = whisper_config.get("suppress_blank"),
-            repetition_penalty = whisper_config.get("repetition_penalty"),
-            log_prob_threshold = whisper_config.get("log_prob_threshold"),
-            no_speech_threshold = whisper_config.get("no_speech_threshold"),
-            condition_on_previous_text = whisper_config.get("condition_on_previous_text"),
-            initial_prompt = whisper_config.get("initial_prompt"),
-            hotwords = whisper_config.get("hotwords_text"),
-            prefix = whisper_config.get("previous_text_prefix"),
-            temperature = whisper_config.get("temperature"),
+            beam_size = self.whisper_config.get("beam_size"),
+            best_of = self.whisper_config.get("best_of"),
+            patience = self.whisper_config.get("patience"),
+            suppress_blank = self.whisper_config.get("suppress_blank"),
+            repetition_penalty = self.whisper_config.get("repetition_penalty"),
+            log_prob_threshold = self.whisper_config.get("log_prob_threshold"),
+            no_speech_threshold = self.whisper_config.get("no_speech_threshold"),
+            condition_on_previous_text = self.whisper_config.get("condition_on_previous_text"),
+            initial_prompt = self.whisper_config.get("initial_prompt"),
+            hotwords = self.whisper_config.get("hotwords_text"),
+            prefix = self.whisper_config.get("previous_text_prefix"),
+            temperature = self.whisper_config.get("temperature"),
         )
 
     def dump(self, final, audio_buffer):
@@ -81,12 +100,10 @@ class Transcriptor:
 
         self.epoch += 1
         audio_path = os.path.join(audio_dir, f"{self.epoch:06d}.wav")
-        scipy.io.wavfile.write(audio_path, rate=16000, data=audio_buffer)
+        scipy.io.wavfile.write(audio_path, rate=self.samplerate, data=audio_buffer)
 
     def vad_rm_silence(self, audio_chunk):
         vad_config = Config.vad
-        if vad_config.get("skip"):
-            return audio_chunk
 
         vad_flags = []
         chunk_num = len(audio_chunk) // 512
@@ -145,8 +162,6 @@ class Transcriptor:
 
     def filter(self, text):
         filter_match = Config.filter_match
-        if filter_match.get("skip"):
-            return text
 
         for match_text in filter_match.get("find_match"):
             if text.find(match_text) != -1:
@@ -202,7 +217,7 @@ class Transcriptor:
         new_buffer = audio_buffer
 
         # 计算音频时长
-        audio_duration = len(audio_buffer) / 16000
+        audio_duration = len(audio_buffer) / self.samplerate
 
         # 获取转录结果
         generated_segments = []
@@ -245,7 +260,7 @@ class Transcriptor:
                 transcript = ""
 
             # 截取最后一段音频作为新的音频缓冲区
-            cut_point = int(generated_segments[num_segments - 2].end * 16000)
+            cut_point = int(generated_segments[num_segments - 2].end * self.samplerate)
             last_buffer = audio_buffer[:cut_point]
             speaker = self.speaker_verifier.match_speaker(last_buffer)
             new_buffer = audio_buffer[cut_point:]
@@ -260,10 +275,15 @@ class Transcriptor:
         return final, speaker, sentence, transcript, new_buffer
 
     def inference(self, audio_data, last_speaker, last_sentence, last_transcript, last_buffer):
-        # vad 过滤静音
-        audio_data = self.vad_rm_silence(audio_data)
+        if Config.speech_enhance.get("enable"):
+            # 语音增强
+            audio_data = self.speech_enhance.enhance(audio_data, self.samplerate)
 
-        # 如果 audio_f32 为空，不做转录
+        if Config.vad.get("enable"):
+            # vad 过滤静音
+            audio_data = self.vad_rm_silence(audio_data)
+
+        # 如果 audio_data 为空，不做转录
         if audio_data is None:
             if len(last_buffer) > 0 and len(last_transcript) > 0:
                 # 如果 last_buffer 不为空，则视为结束，完整句子为 last_transcript ，新的转录结果为空，新的音频缓冲区为空
@@ -293,7 +313,7 @@ if __name__ == "__main__":
 
     # 读取音频文件
     audio = AudioSegment.from_file("./examples/asr_example.wav")
-    audio = audio.set_frame_rate(16000)
+    audio = audio.set_frame_rate(transcriptor.samplerate)
 
     # 设置音频数据为 int16 格式
     audio = audio.set_sample_width(2)

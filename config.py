@@ -1,7 +1,7 @@
 import os
 
 class Config:
-    model_path = "./models"
+    model_path = "./checkpoints"
     registers_path = "./register_db"
 
     models = {
@@ -35,9 +35,16 @@ class Config:
         "audio_dir": "./cache"
     }
 
+    speech_enhance = {
+        "enable": True,
+        "model_name": "MossFormer2_SE_48K",
+        "target_lufs": -16.0,
+        "true_peak_limit": -1.0,
+    }
+
     vad = {
-        "skip": False,
-        "vad_threshold": 0.1,
+        "enable": True,
+        "vad_threshold": 0.2,
         "sampling_rate": 16000,
         "sampling_per_chunk": 512,
         "min_silence_duration": 12,        # 12 * 31.25ms = 375ms
@@ -46,7 +53,7 @@ class Config:
     }
 
     filter_match = {
-        "skip": False,
+        "enable": True,
         "find_match": ["谢谢大家", "简体中文", "优独播剧场", "大家好，这是一段会议录音。"],
         "cos_match": [
             "请不吝点赞 订阅 转发 打赏支持明镜与点栏目",
@@ -63,8 +70,8 @@ class Config:
     whisper_config = {
         "tradition_to_simple": False,
         "interruption_duration": 20,    # 最大中断时长，单位：秒
-        "beam_size": 2,  # 1、beam_size调整为8 best_of调整为4 提高模型效果
-        "best_of": 1,    # 2、beam_size调整为4 best_of调整为1 速度更快
+        "beam_size": 8,  # 1、beam_size调整为8 best_of调整为4 提高模型效果
+        "best_of": 4,    # 2、beam_size调整为4 best_of调整为1 速度更快
         "patience": 1.0,
         "suppress_blank": True,     # 幻觉抑制
         "repetition_penalty": 1.2,  # 重复惩罚 但降低效果

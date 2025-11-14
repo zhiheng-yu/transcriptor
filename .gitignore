@@ -208,6 +208,6 @@ __marimo__/
 
 # Local
 cache/
-models/
+checkpoints/
 examples/
 register_db/

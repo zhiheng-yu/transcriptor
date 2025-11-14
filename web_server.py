@@ -36,12 +36,15 @@ class WebServer:
 
         # 检查音频数据长度，如果小于一帧或为空，直接返回空字节串
         if len(audio_data) < AUDIO_FRAME_SIZE:
+            print(f"数据长度小于一帧: {len(audio_data)}, 返回空字节串")
             return b""
 
         for i in range(len(audio_data) // AUDIO_FRAME_SIZE):
             chunk = audio_data[i*AUDIO_FRAME_SIZE:(i+1)*AUDIO_FRAME_SIZE]
 
+            print(f"编码: {len(chunk)}")
             opus_audio = self.opus_encoder.encode(chunk.tobytes(), frame_size=AUDIO_FRAME_SIZE)
+            print(f"编码后: {len(opus_audio)}")
             header = len(opus_audio).to_bytes(2, 'big')
             opus_list.append(header + opus_audio)
 
@@ -57,6 +60,7 @@ class WebServer:
 
             if len(opus_audio) < total_packet_size:
                 # 数据不完整，等待更多数据
+                print(f"数据不完整，等待更多数据: {len(opus_audio)}")
                 break
 
             # 提取完整包
@@ -65,7 +69,9 @@ class WebServer:
 
             # 解码
             try:
+                print(f"解码: {len(opus_packet)}")
                 pcm = self.opus_decoder.decode(opus_packet, frame_size=AUDIO_FRAME_SIZE)
+                print(f"解码后: {len(pcm)}")
                 pcm_list.append(pcm)
             except Exception as e:
                 print(f"解码失败: {e}, 数据长度: {len(opus_packet)}")
