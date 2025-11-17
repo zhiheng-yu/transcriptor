@@ -3,6 +3,7 @@ import websockets
 import base64
 import opuslib_next
 import json
+import time
 import numpy as np
 
 from transcriptor import Transcriptor
@@ -120,6 +121,7 @@ class WebServer:
 
                     inference_result = {
                         "final": final,
+                        "timestamp": int(time.time()),
                         "speaker": speaker,
                         "sentence": sentence,
                         "transcript": transcript,

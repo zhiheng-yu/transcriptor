@@ -17,6 +17,7 @@ services:
       - ./examples:/app/examples
       - ./register_db:/app/register_db
       - ./config.py:/app/config.py
+      - /etc/localtime:/etc/localtime:ro
     ports:
       - "6002:6002"
     restart: unless-stopped
