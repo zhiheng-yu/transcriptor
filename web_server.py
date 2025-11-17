@@ -75,30 +75,40 @@ class WebServer:
         try:
             async for message in websocket:
                 try:
-                    resquest = json.loads(message)
+                    request = json.loads(message)
 
-                    resquest_copy = dict(resquest)
-                    if "audio_base64" in resquest_copy:
-                        resquest_copy["audio_base64"] = (
-                            f"[omitted]..len={len(resquest_copy['audio_base64'])}"
+                    if "type" in request and request["type"] == "ping":
+                        print(f"Ping request: {request}")
+                        response = {
+                            "type": "ping",
+                            "result": "pass"
+                        }
+                        await websocket.send(json.dumps(response, ensure_ascii=False, indent=4))
+                        print(f"Ping response: {response}")
+                        continue
+
+                    request_copy = dict(request)
+                    if "audio_base64" in request_copy:
+                        request_copy["audio_base64"] = (
+                            f"[omitted]..len={len(request_copy['audio_base64'])}"
                         )
-                    if "last_buffer_base64" in resquest_copy:
-                        resquest_copy["last_buffer_base64"] = (
-                            f"[omitted]..len={len(resquest_copy['last_buffer_base64'])}"
+                    if "last_buffer_base64" in request_copy:
+                        request_copy["last_buffer_base64"] = (
+                            f"[omitted]..len={len(request_copy['last_buffer_base64'])}"
                         )
-                    print(resquest_copy)
+                    print(request_copy)
 
                     audio_data = np.frombuffer(
-                        self.decode_opus(base64.b64decode(resquest["audio_base64"])),
+                        self.decode_opus(base64.b64decode(request["audio_base64"])),
                         dtype=np.int16
                     )
                     audio_f32 = audio_data.astype(np.float32) / 32768.0
 
-                    last_speaker = resquest["last_speaker"]
-                    last_sentence = resquest["last_sentence"]
-                    last_transcript = resquest["last_transcript"]
+                    last_speaker = request["last_speaker"]
+                    last_sentence = request["last_sentence"]
+                    last_transcript = request["last_transcript"]
                     last_buffer = np.frombuffer(
-                        self.decode_opus(base64.b64decode(resquest["last_buffer_base64"])),
+                        self.decode_opus(base64.b64decode(request["last_buffer_base64"])),
                         dtype=np.int16
                     )
                     last_buffer_f32 = last_buffer.astype(np.float32) / 32768.0
