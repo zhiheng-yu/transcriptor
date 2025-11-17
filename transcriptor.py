@@ -49,7 +49,9 @@ class Transcriptor:
             self.speech_enhance = SpeechEnhance(
                 model_name=se_config.get("model_name"),
                 target_lufs=se_config.get("target_lufs"),
-                true_peak_limit=se_config.get("true_peak_limit")
+                true_peak_limit=se_config.get("true_peak_limit"),
+                mute_if_too_quiet=se_config.get("mute_if_too_quiet"),
+                threshold_dbfs=se_config.get("threshold_dbfs"),
             )
         else:
             self.speech_enhance = None

@@ -3,7 +3,7 @@ librosa==0.10.2.post1
 OpenCC==1.1.9
 opuslib_next==1.1.5
 scikit-learn==1.7.2
-websocket-server==0.6.4
+websockets==14.1
 pydub==0.25.1
 modelscope==1.31.0
 addict==2.4.0
