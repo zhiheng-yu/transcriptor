@@ -40,6 +40,8 @@ class Config:
         "model_name": "MossFormer2_SE_48K",
         "target_lufs": -16.0,
         "true_peak_limit": -1.0,
+        "mute_if_too_quiet": True,
+        "threshold_dbfs": -50,
     }
 
     vad = {

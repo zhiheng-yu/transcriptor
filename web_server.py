@@ -1,7 +1,9 @@
-import websocket_server
+import asyncio
+import websockets
 import base64
 import opuslib_next
 import json
+import time
 import numpy as np
 
 from transcriptor import Transcriptor
@@ -16,20 +18,7 @@ class WebServer:
         self.transcriptor = Transcriptor()
         self.opus_decoder = opuslib_next.Decoder(SAMPLING_RATE, AUDIO_CHANNELS)
         self.opus_encoder = opuslib_next.Encoder(SAMPLING_RATE, AUDIO_CHANNELS, opuslib_next.APPLICATION_VOIP)
-
-        # 创建 WebSocket 服务器
-        self.ws = websocket_server.WebsocketServer(host='0.0.0.0', port=6002)
-        self.ws.set_fn_new_client(self.on_new_client)
-        self.ws.set_fn_client_left(self.on_client_left)
-        self.ws.set_fn_message_received(self.on_message)
-
         print("Server Init")
-
-    def on_new_client(self, client, server):
-        print(f"New client connected: {client['address'][0]+':'+str(client['address'][1])}")
-
-    def on_client_left(self, client, server):
-        print(f"Client disconnected: {client['address'][0]+':'+str(client['address'][1])}")
 
     def encode_opus(self, audio_data):
         opus_list = []
@@ -42,9 +31,9 @@ class WebServer:
         for i in range(len(audio_data) // AUDIO_FRAME_SIZE):
             chunk = audio_data[i*AUDIO_FRAME_SIZE:(i+1)*AUDIO_FRAME_SIZE]
 
-            print(f"编码: {len(chunk)}")
+            # print(f"编码: {len(chunk)}")
             opus_audio = self.opus_encoder.encode(chunk.tobytes(), frame_size=AUDIO_FRAME_SIZE)
-            print(f"编码后: {len(opus_audio)}")
+            # print(f"编码后: {len(opus_audio)}")
             header = len(opus_audio).to_bytes(2, 'big')
             opus_list.append(header + opus_audio)
 
@@ -69,9 +58,9 @@ class WebServer:
 
             # 解码
             try:
-                print(f"解码: {len(opus_packet)}")
+                # print(f"解码: {len(opus_packet)}")
                 pcm = self.opus_decoder.decode(opus_packet, frame_size=AUDIO_FRAME_SIZE)
-                print(f"解码后: {len(pcm)}")
+                # print(f"解码后: {len(pcm)}")
                 pcm_list.append(pcm)
             except Exception as e:
                 print(f"解码失败: {e}, 数据长度: {len(opus_packet)}")
@@ -80,43 +69,91 @@ class WebServer:
         return b"".join(pcm_list)
 
     # 处理客户端消息
-    def on_message(self, client, server, message):
+    async def handle_client(self, websocket):
+        client_address = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
+        print(f"New client connected: {client_address}")
+
         try:
-            resquest = json.loads(message)
+            async for message in websocket:
+                try:
+                    request = json.loads(message)
 
-            audio_data = np.frombuffer(
-                self.decode_opus(base64.b64decode(resquest["audio_base64"])),
-                dtype=np.int16
-            )
-            audio_f32 = audio_data.astype(np.float32) / 32768.0
+                    if "type" in request and request["type"] == "ping":
+                        print(f"Ping request: {request}")
+                        response = {
+                            "type": "ping",
+                            "result": "pass"
+                        }
+                        await websocket.send(json.dumps(response, ensure_ascii=False, indent=4))
+                        print(f"Ping response: {response}")
+                        continue
 
-            last_speaker = resquest["last_speaker"]
-            last_sentence = resquest["last_sentence"]
-            last_transcript = resquest["last_transcript"]
-            last_buffer = np.frombuffer(
-                self.decode_opus(base64.b64decode(resquest["last_buffer_base64"])),
-                dtype=np.int16
-            )
-            last_buffer_f32 = last_buffer.astype(np.float32) / 32768.0
+                    request_copy = dict(request)
+                    if "audio_base64" in request_copy:
+                        request_copy["audio_base64"] = (
+                            f"[omitted]..len={len(request_copy['audio_base64'])}"
+                        )
+                    if "last_buffer_base64" in request_copy:
+                        request_copy["last_buffer_base64"] = (
+                            f"[omitted]..len={len(request_copy['last_buffer_base64'])}"
+                        )
+                    print(request_copy)
 
-            final, speaker, sentence, transcript, new_buffer_f32 = self.transcriptor.inference(
-                audio_f32, last_speaker, last_sentence, last_transcript, last_buffer_f32)
+                    audio_data = np.frombuffer(
+                        self.decode_opus(base64.b64decode(request["audio_base64"])),
+                        dtype=np.int16
+                    )
+                    audio_f32 = audio_data.astype(np.float32) / 32768.0
 
-            new_buffer_i16 = (new_buffer_f32 * 32768.0).astype(np.int16)
+                    last_speaker = request["last_speaker"]
+                    last_sentence = request["last_sentence"]
+                    last_transcript = request["last_transcript"]
+                    last_buffer = np.frombuffer(
+                        self.decode_opus(base64.b64decode(request["last_buffer_base64"])),
+                        dtype=np.int16
+                    )
+                    last_buffer_f32 = last_buffer.astype(np.float32) / 32768.0
 
-            inference_result = {
-                "final": final,
-                "speaker": speaker,
-                "sentence": sentence,
-                "transcript": transcript,
-                "buffer_base64": base64.b64encode(self.encode_opus(new_buffer_i16)).decode("utf-8")
-            }
+                    final, speaker, sentence, transcript, new_buffer_f32 = self.transcriptor.inference(
+                        audio_f32, last_speaker, last_sentence, last_transcript, last_buffer_f32)
 
-            server.send_message(client, json.dumps(inference_result, ensure_ascii=False, indent=4))
+                    new_buffer_i16 = (new_buffer_f32 * 32768.0).astype(np.int16)
+
+                    inference_result = {
+                        "final": final,
+                        "timestamp": int(time.time()),
+                        "speaker": speaker,
+                        "sentence": sentence,
+                        "transcript": transcript,
+                        "buffer_base64": base64.b64encode(self.encode_opus(new_buffer_i16)).decode("utf-8")
+                    }
+
+                    inference_result_copy = dict(inference_result)
+                    if "buffer_base64" in inference_result_copy:
+                        inference_result_copy["buffer_base64"] = (
+                            f"[omitted]..len={len(inference_result_copy['buffer_base64'])}"
+                        )
+                    print(inference_result_copy)
+
+                    await websocket.send(json.dumps(inference_result, ensure_ascii=False, indent=4))
+                except json.JSONDecodeError as e:
+                    print(f"JSON decode error: {e}")
+                except Exception as e:
+                    print(f"Warning processing message: {e}")
+        except websockets.exceptions.ConnectionClosed:
+            print(f"Client disconnected: {client_address}")
         except Exception as e:
-            print(f"Warning processing message: {e}")
+            print(f"Connection error: {e}")
+
+    async def start(self):
+        async with websockets.serve(self.handle_client, '0.0.0.0', 6002,
+                                    max_size=10*1024*1024,  # 增加最大消息大小到10MB
+                                    ping_interval=20,  # 每20秒发送ping
+                                    ping_timeout=20):  # ping超时时间
+            print("WebSocket server started on ws://0.0.0.0:6002")
+            await asyncio.Future()  # 永久运行
 
 
 if __name__ == "__main__":
     server = WebServer()
-    server.ws.run_forever()
+    asyncio.run(server.start())

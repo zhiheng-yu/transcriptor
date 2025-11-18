@@ -8,10 +8,35 @@ RATE_48K = 48000
 
 
 class SpeechEnhance:
-    def __init__(self, model_name="MossFormer2_SE_48K", target_lufs=-16.0, true_peak_limit=-1.0):
+    def __init__(
+        self,
+        model_name="MossFormer2_SE_48K",
+        target_lufs=-16.0,
+        true_peak_limit=-1.0,
+        mute_if_too_quiet=True,
+        threshold_dbfs=-50
+    ):
         self.myClearVoice = ClearVoice(task='speech_enhancement', model_names=[model_name])
         self.target_lufs = target_lufs
         self.true_peak_limit = true_peak_limit
+        self.mute_if_too_quiet = mute_if_too_quiet
+        self.threshold_dbfs = threshold_dbfs
+
+    def mute_with_threshold_dbfs(self, audio_np):
+        """
+        如果音频整体音量太小，则清零。
+        Args:
+            audio_np (np.ndarray): 单声道或多声道音频，float32，范围 -1~1。
+            threshold_dbfs (float): 阈值，单位 dBFS。如果低于该值则返回全零。
+        Returns:
+            np.ndarray: 如果音量低于阈值则为全零，否则原音频。
+        """
+        # 避免全零导致 log(-inf)
+        rms = np.sqrt(np.max(np.square(audio_np))) + 1e-10
+        dbfs = 20 * np.log10(rms)
+        if dbfs < self.threshold_dbfs:
+            return np.zeros_like(audio_np)
+        return audio_np
 
     def normalize_loudness_advanced(self, audio_np, samplerate):
         """
@@ -69,6 +94,8 @@ class SpeechEnhance:
             audio_48k = audio_np
 
         audio_48k = self.clearvoice_enhance(audio_48k)
+        if self.mute_if_too_quiet:
+            audio_48k = self.mute_with_threshold_dbfs(audio_48k)
         audio_48k = self.normalize_loudness_advanced(audio_48k, RATE_48K)
 
         if samplerate != RATE_48K:
