@@ -10,6 +10,7 @@ services:
               device_ids: ['0']  # 指定 GPU 设备号
               capabilities: [gpu]
     environment:
+      - MODELSCOPE_CACHE_DIR=/app/checkpoints
       - PYTHONUNBUFFERED=1
     volumes:
       - ./cache:/app/cache

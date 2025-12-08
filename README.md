@@ -1,6 +1,6 @@
-# faster-whisper 实时语音转录系统
+# funasr 实时语音转录系统
 
-本项目是一个基于 `faster-whisper` 和 `Silero VAD` 的实时语音转录系统，支持流式音频输入和低延迟转录。系统由后端服务和前端客户端组成，可应用于会议记录、实时字幕等场景。
+本项目是一个基于 `funasr` 的实时语音转录系统，支持流式音频输入和低延迟转录。系统由后端服务和前端客户端组成，可应用于会议记录、实时字幕等场景。
 
 ## 项目结构
 
@@ -33,26 +33,17 @@
 
 > **注意**: 音频长度小于 0.4 秒时，将仅进行简单的峰值归一化以保证处理稳定性。
 
-### 2. 语音活动检测 (VAD)
+### 2. 实时转录
 
-使用 Silero VAD 模型检测语音活动，有效过滤静音段，提升转录效率和准确性。
+基于 funasr 模型实现流式转录，支持以下特性：
 
-**配置参数** (`config.py`):
-- `vad_threshold`: VAD 检测阈值 (默认 0.1)
-- `min_silence_duration`: 最小静音时长 (默认 12 帧 ≈ 375ms)
-- `min_voice_duration`: 最小语音时长 (默认 8 帧 ≈ 250ms)
-- `silence_reserve`: 语音段前后保留的静音采样点 (默认 6 帧 ≈ 187.5ms)
+- **自动语言检测**: 支持自动识别音频语言类型
+- **逆文本规范化**: 自动将数字、日期等转换为标准文本格式
+- **VAD 智能合并**: 通过 `merge_vad` 和 `merge_length_s` 参数合并相邻语音片段，提升长句转录准确性
+- **句子时间戳**: 提供每个句子的起止时间信息，支持精确的音频定位
+- **上下文连续性**: 通过音频缓冲区管理保持流式转录的上下文连续性
 
-### 3. 实时转录
-
-基于 faster-whisper 模型实现流式转录，支持以下特性：
-
-- **上下文感知**: 使用上一段落文本作为 prompt 或 hotwords，提升转录连贯性
-- **幻觉抑制**: 通过 `suppress_blank` 和 `repetition_penalty` 参数减少模型幻觉
-- **多温度采样**: 支持 `[0.0, 0.2, 0.6, 1.0]` 温度序列，平衡生成质量和多样性
-- **繁体转简体**: 可选开启繁体中文到简体中文的转换
-
-### 4. 发言人识别
+### 3. 发言人识别
 
 基于 ModelScope 的 ERes2NetV2 模型实现发言人验证，支持多发言人场景的自动识别。
 
@@ -85,17 +76,14 @@ pip install -r requirements.txt
 
 ## 模型准备
 
-下载 `faster-whisper` 、 `ERes2NetV2` 、 `MossFormer2_SE_48K` 和 `silero-vad` 模型到 `checkpoints/` 目录
+下载 `ERes2NetV2` 和 `MossFormer2_SE_48K` 模型到 `checkpoints/` 目录
 
 ```bash
 cd checkpoints
 
-modelscope download --model mobiuslabsgmbh/faster-whisper-large-v3-turbo --local_dir ./faster-whisper-large-v3-turbo
 modelscope download --model iic/ClearerVoice-Studio MossFormer2_SE_48K/last_best_checkpoint --local_dir .
 modelscope download --model iic/ClearerVoice-Studio MossFormer2_SE_48K/last_best_checkpoint.pt --local_dir .
 modelscope download --model iic/speech_eres2netv2w24s4ep4_sv_zh-cn_16k-common --local_dir ./ERes2NetV2_w24s4ep4
-
-git clone https://github.com/snakers4/silero-vad.git
 ```
 
 ## 运行方式
