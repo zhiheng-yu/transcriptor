@@ -35,7 +35,7 @@ class Config:
 
     dump = {
         "audio_save": "none",   # all: 保存所有音频，final: 只保存最终音频, none: 不保存
-        "audio_dir": "./cache"
+        "audio_dir": "./dumps"
     }
 
     speech_enhance = {

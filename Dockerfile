@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.6.3-cudnn-devel-ubuntu22.04
+FROM megrez:pytorch-2.6.0_cuda-12.6_python-3.12_ubuntu-22.04
 
 WORKDIR /app
 

@@ -76,7 +76,7 @@ pip install -r requirements.txt
 
 ## 模型准备
 
-下载 `ERes2NetV2` 和 `MossFormer2_SE_48K` 模型到 `checkpoints/` 目录
+下载 `ERes2NetV2` 模型到 `checkpoints/` 目录
 
 ```bash
 cd checkpoints

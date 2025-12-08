@@ -209,5 +209,6 @@ __marimo__/
 # Local
 cache/
 checkpoints/
+dumps/
 examples/
 register_db/
