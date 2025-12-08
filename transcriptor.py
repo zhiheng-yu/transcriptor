@@ -1,48 +1,40 @@
 import os
-import torch
 import scipy
-from itertools import groupby
 import numpy as np
 from pydub import AudioSegment
-import librosa
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from faster_whisper import WhisperModel
+from funasr import AutoModel
 
 from config import Config
 from speaker_recognize import SpeakerVerifier
 from speech_enhance import SpeechEnhance
 
 
+class Segment:
+    def __init__(self, text, start, end):
+        self.text = text
+        self.start = start
+        self.end = end
+
+
 class Transcriptor:
     def __init__(self):
-        self.samplerate = 16000
+        self.samplerate = Config.samplerate
         self.epoch = 0
         self.load_models(Config.models)
         self.preheat(Config.preheat_audio)
 
     def load_models(self, models):
-        asr_config = models.get("asr")
-        vad_config = models.get("vad")
-
-        self.asr_model = WhisperModel(
-            model_size_or_path = asr_config["path"],
-            device = asr_config["device"],
-            local_files_only = False,
-            compute_type = asr_config["compute_type"]
+        asr_config = models["asr"]
+        self.asr_model = AutoModel(
+            model=asr_config["name"],
+            vad_model=models["vad"]["name"],
+            punc_model=models["punc"]["name"],
+            vad_kwargs={"max_single_segment_time": Config.max_speech_duration * 1000},
+            device=asr_config["device"],
+            disable_update=True
         )
 
         self.speaker_verifier = SpeakerVerifier()
-
-        if Config.vad.get("enable"):
-            self.vad_model, _ = torch.hub.load(
-                repo_or_dir = vad_config["path"],
-                model = 'silero_vad',
-                trust_repo = None,
-                source = 'local',
-            )
-        else:
-            self.vad_model = None
 
         se_config = Config.speech_enhance
         if se_config.get("enable"):
@@ -56,34 +48,17 @@ class Transcriptor:
         else:
             self.speech_enhance = None
 
-        if Config.filter_match.get("enable"):
-            self.vectorizer = TfidfVectorizer()
-        else:
-            self.vectorizer = None
-
-        self.whisper_config = Config.whisper_config
-        if self.whisper_config.get("tradition_to_simple"):
-            import opencc
-            self.cc_model = opencc.OpenCC('t2s.json')
-        else:
-            self.cc_model = None
-
     def preheat(self, preheat_audio):
-        preheat_audio_, _ = librosa.load(preheat_audio, sr=self.samplerate, dtype=np.float32)
-        self.asr_model.transcribe(
-            preheat_audio_,
-            beam_size = self.whisper_config.get("beam_size"),
-            best_of = self.whisper_config.get("best_of"),
-            patience = self.whisper_config.get("patience"),
-            suppress_blank = self.whisper_config.get("suppress_blank"),
-            repetition_penalty = self.whisper_config.get("repetition_penalty"),
-            log_prob_threshold = self.whisper_config.get("log_prob_threshold"),
-            no_speech_threshold = self.whisper_config.get("no_speech_threshold"),
-            condition_on_previous_text = self.whisper_config.get("condition_on_previous_text"),
-            initial_prompt = self.whisper_config.get("initial_prompt"),
-            hotwords = self.whisper_config.get("hotwords_text"),
-            prefix = self.whisper_config.get("previous_text_prefix"),
-            temperature = self.whisper_config.get("temperature"),
+        self.asr_model.generate(
+            input=preheat_audio,
+            cache={},
+            language="zh",
+            use_itn=True,
+            batch_size_s=60,
+            merge_vad=True,
+            merge_length_s=15,
+            sentence_timestamp=True,
+            disable_pbar=True
         )
 
     def dump(self, final, audio_buffer):
@@ -104,175 +79,83 @@ class Transcriptor:
         audio_path = os.path.join(audio_dir, f"{self.epoch:06d}.wav")
         scipy.io.wavfile.write(audio_path, rate=self.samplerate, data=audio_buffer)
 
-    def vad_rm_silence(self, audio_chunk):
-        vad_config = Config.vad
+    def parse_to_segments(self, funasr_res):
+        segments = []
+        if "sentence_info" in funasr_res:
+            new_sentence = True
+            sentence = ""
+            for res in funasr_res["sentence_info"]:
+                if new_sentence:
+                    start = res["start"] / 1000
+                    new_sentence = False
+                sentence += res["text"]
+                end = res["end"] / 1000
+                if any(punct in sentence for punct in ["。", "？", "！", ".", "!", "?"]):
+                    segments.append(Segment(sentence, start, end))
+                    new_sentence = True
+                    sentence = ""
+            if sentence != "":
+                segments.append(Segment(sentence, start, end))
+        return segments
 
-        vad_flags = []
-        chunk_num = len(audio_chunk) // 512
-        sampling_rate = vad_config.get("sampling_rate")
-        sampling_per_chunk = vad_config.get("sampling_per_chunk")
-
-        for i in range(chunk_num):
-            chunk = audio_chunk[i*sampling_per_chunk:(i+1)*sampling_per_chunk]
-
-            chunk_torch = torch.tensor(chunk).unsqueeze(0)
-            silero_score = self.vad_model(chunk_torch, sampling_rate).item()
-
-            # 如果人生检测概率大于阈值，则认为有语音
-            if silero_score > vad_config.get("vad_threshold"):
-                vad_flags.append(1)
-            else:
-                vad_flags.append(0)
-
-        # print("vad_flags: ", vad_flags)
-
-        # 如果语音时间小于最小语音时间，则认为没有语音，直接返回空
-        voice_duration = vad_flags.count(1)
-        if voice_duration < vad_config.get("min_voice_duration"):
-            return None
-
-        # 如果静音时间小于最小静音时间，则认为没有静音，直接返回原始音频
-        silence_duration = vad_flags.count(0)
-        if silence_duration < vad_config.get("min_silence_duration"):
-            return audio_chunk
-
-        # 删除静音部分，但是语音前后均保留 silence_reserve 个采样点
-        silence_reserve = vad_config.get("silence_reserve")
-        # 找到所有语音段的起始和结束位置
-        indices = []
-        for flag, group in groupby(enumerate(vad_flags), lambda x: x[1]):
-            if flag == 1:  # 语音段
-                group = list(group)
-                start = group[0][0]
-                end = group[-1][0]
-                indices.append((start, end))
-
-        # print("indices: ", indices)
-
-        split_chunk = []
-        for start, end in indices:
-            # 计算保留的前后静音区间
-            # print("start: ", (start - silence_reserve), "end: ", (end + 1 + silence_reserve))
-            start_sample = max(0, (start - silence_reserve) * sampling_per_chunk)
-            end_sample = min(len(audio_chunk), (end + 1 + silence_reserve) * sampling_per_chunk)
-            split_chunk.extend(audio_chunk[start_sample:end_sample])
-
-        if len(split_chunk) > 0:
-            return np.array(split_chunk, dtype=np.float32)
-        else:
-            return None
-
-    def filter(self, text):
-        filter_match = Config.filter_match
-
-        for match_text in filter_match.get("find_match"):
-            if text.find(match_text) != -1:
-                return ""
-
-        for match_text in filter_match.get("cos_match"):
-            tfidf_matrix = self.vectorizer.fit_transform([match_text, text])
-
-            cos_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])
-            if cos_sim > filter_match.get("cos_sim"):
-                return ""
-
-        return text
-
-    def transcript(self, audio_buffer, last_speaker, last_sentence):
-        whisper_config = Config.whisper_config
-
-        initial_prompt = whisper_config.get("initial_prompt")
-        if whisper_config.get("previous_text_prompt"):
-            initial_prompt += last_sentence
-
-        hotwords = whisper_config.get("hotwords_text")
-        if whisper_config.get("previous_text_hotwords"):
-            hotwords += last_sentence
-
-        prefix_text = None
-        if whisper_config.get("previous_text_prefix"):
-            prefix_text = last_sentence
-
-        interruption_duration = whisper_config.get("interruption_duration")
-
-        segments, info = self.asr_model.transcribe(
-            audio_buffer,
-            beam_size = whisper_config.get("beam_size"),
-            best_of = whisper_config.get("best_of"),
-            patience = whisper_config.get("patience"),
-            suppress_blank = whisper_config.get("suppress_blank"),
-            repetition_penalty = whisper_config.get("repetition_penalty"),
-            log_prob_threshold = whisper_config.get("log_prob_threshold"),
-            no_speech_threshold = whisper_config.get("no_speech_threshold"),
-            condition_on_previous_text = whisper_config.get("condition_on_previous_text"),
-            initial_prompt = initial_prompt,
-            hotwords = hotwords,
-            prefix = prefix_text,
-            temperature = whisper_config.get("temperature"),
+    def transcript(self, audio_buffer, last_speaker, last_sentence, last_transcript):
+        res = self.asr_model.generate(
+            input=audio_buffer,
+            cache={},
+            language="auto",
+            use_itn=True,
+            batch_size_s=60,
+            merge_vad=True,
+            merge_length_s=15,
         )
-        # print("transcript info: ", info)
 
         final = False
         speaker = last_speaker
         sentence = last_sentence
-        transcript = ""
+        transcript = last_transcript
         new_buffer = audio_buffer
 
-        # 计算音频时长
+        # 获取转录结果
+        if not res or len(res) == 0:
+            print("No result from asr model")
+            return final, speaker, sentence, transcript, new_buffer
+
+        segments = self.parse_to_segments(res[0])
+        num_segments = len(segments)
+
         audio_duration = len(audio_buffer) / self.samplerate
 
-        # 获取转录结果
-        generated_segments = []
-        for segment in segments:
-            generated_segments.append(segment)
-        num_segments = len(generated_segments)
-
         if num_segments == 0:
-            # 如果转录结果为空，则直接返回
-            return False, speaker, sentence, transcript, new_buffer
+            if audio_duration > Config.max_silence_interval:
+                new_buffer = np.array([],dtype=np.float32)
         elif num_segments == 1:
-            # 如果只有一段，则记录转录信息
-            # print("log: ", generated_segments[0].avg_logprob)
-            if generated_segments[0].avg_logprob > whisper_config.get("log_prob_threshold"):
-                transcript = generated_segments[0].text
-            else:
-                transcript = ""
-
-            # 如果音频时长超过最大中断时长，则认为中断结束
-            if audio_duration > interruption_duration:
-                print(f"Warning: audio buffer over {interruption_duration} seconds, interrupt")
-                speaker = self.speaker_verifier.match_speaker(audio_buffer)
-                sentence = transcript
+            # 只有一段
+            if audio_duration - segments[0].end > Config.max_silence_interval:
+                # 音频尾段过长，则认为结束
+                final = True
+                sentence = segments[0].text
                 transcript = ""
                 new_buffer = np.array([],dtype=np.float32)
-                final = True
             else:
-                final = False
+                # 音频尾段不长，则认为继续
+                transcript = segments[0].text
 
             self.dump(final, audio_buffer)
         elif num_segments >= 2:
             # 如果有多段，则截取最后一段
             sentence = ""
             for i in range(num_segments - 1):
-                sentence += generated_segments[i].text
-            # print("log: ", generated_segments[num_segments - 1].avg_logprob)
-            if generated_segments[num_segments - 1].avg_logprob > whisper_config.get("log_prob_threshold"):
-                transcript = generated_segments[num_segments - 1].text
-            else:
-                transcript = ""
+                sentence += segments[i].text
+            transcript = segments[num_segments - 1].text
 
             # 截取最后一段音频作为新的音频缓冲区
-            cut_point = int(generated_segments[num_segments - 2].end * self.samplerate)
+            cut_point = int(segments[num_segments - 2].end * self.samplerate)
             last_buffer = audio_buffer[:cut_point]
             speaker = self.speaker_verifier.match_speaker(last_buffer)
+            final = True
             new_buffer = audio_buffer[cut_point:]
 
-            final = True
             self.dump(final, last_buffer)
-
-        if whisper_config.get("tradition_to_simple"):
-            # 繁体到简体
-            transcript = self.cc_model.convert(transcript)
 
         return final, speaker, sentence, transcript, new_buffer
 
@@ -281,31 +164,11 @@ class Transcriptor:
             # 语音增强
             audio_data = self.speech_enhance.enhance(audio_data, self.samplerate)
 
-        if Config.vad.get("enable"):
-            # vad 过滤静音
-            audio_data = self.vad_rm_silence(audio_data)
-
-        # 如果 audio_data 为空，不做转录
-        if audio_data is None:
-            if len(last_buffer) > 0 and len(last_transcript) > 0:
-                # 如果 last_buffer 不为空，则视为结束，完整句子为 last_transcript ，新的转录结果为空，新的音频缓冲区为空
-                self.dump(True, last_buffer)
-                speaker = self.speaker_verifier.match_speaker(last_buffer)
-                new_buffer = np.array([],dtype=np.float32)
-                return True, speaker, last_transcript, "", new_buffer
-            else:
-                # 如果 last_buffer 为空，则视为未结束
-                return False, last_speaker, last_sentence, last_transcript, last_buffer
-
         # 合并 last_buffer 和 chunk_audio
         audio_buffer = np.concatenate([last_buffer, audio_data])
 
         # 转录，last_sentence 为上一段转录的完整句子，可作为 prompt 或 hotwords
-        final, speaker, sentence, transcript, new_buffer = self.transcript(audio_buffer, last_speaker, last_sentence)
-
-        # 过滤幻觉词
-        sentence = self.filter(sentence)
-        transcript = self.filter(transcript)
+        final, speaker, sentence, transcript, new_buffer = self.transcript(audio_buffer, last_speaker, last_sentence, last_transcript)
 
         return final, speaker, sentence, transcript, new_buffer
 
@@ -336,10 +199,9 @@ if __name__ == "__main__":
     last_transcript = ""
     last_buffer = np.array([],dtype=np.float32)
 
-    # 按 1 秒的频率读取数据
-    audio_size = 16384  # 每秒的样本数
-    for i in range(0, len(samples), audio_size):
-        audio_data = samples[i:i + audio_size]
+    chunk_size = int(Config.samplerate * 0.5)
+    for i in range(0, len(samples), chunk_size):
+        audio_data = samples[i:i + chunk_size]
 
         audio_f32 = audio_data.astype(np.float32) / 32768.0
         final, speaker, sentence, transcript, new_buffer = transcriptor.inference(
